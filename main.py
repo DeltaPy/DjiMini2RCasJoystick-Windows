@@ -1,23 +1,14 @@
-import serial, argparse, binascii, struct, sys, time, uinput
+import serial, argparse, struct, time, vgamepad as vg
 from threading import Thread
 
-parser = argparse.ArgumentParser(description='DJI Mini 2 RC (also known as RC-N1, RCS231, WM161b-RC-N1, RCN1) <-> Linux joystick interface (uinput)')
+parser = argparse.ArgumentParser(description='DJI Mini 2 RC (also known as RC-N1, RCS231, WM161b-RC-N1, RCN1) <-> vGamePad')
 
 parser.add_argument('-p', '--port', help='RC Serial Port', required=True)
 
 args = parser.parse_args()
 
-maxValue = 32768
+gamepad = vg.VDS4Gamepad()
 
-events = (
-    uinput.BTN_JOYSTICK,
-    uinput.ABS_X + (0, 32767, 0, 0),
-    uinput.ABS_Y + (0, 32767, 0, 0),
-    uinput.ABS_THROTTLE + (0, 32767, 0, 0),
-    uinput.ABS_RUDDER + (0, 32767, 0, 0),
-    )
-
-device = uinput.Device(events)
 time.sleep(1)
 
 def calc_checksum(packet, plength):
@@ -135,24 +126,21 @@ print('\nPress Ctrl+C (or interrupt) to stop.\n')
 
 # Process input (min 364, center 1024, max 1684) -> (min 0, center 16384, max 32768)
 def parseInput(input, name):
-    output = (int.from_bytes(input, byteorder='little') - 364) * 4096 // 165
-
-    return output
+    #I dont know how to map joystick ranges but it works
+    output = (int.from_bytes(input, byteorder='little') - 364) * 1 // 5.19 + 1 
+    return int(output)
 
 st = {"rh": 0, "rv": 0, "lh": 0, "lv": 0}
 
 def threaded_function():
     while(True):
-        time.sleep(0.1)
-        #print("working ...")
-        device.emit(uinput.ABS_X, int(st["lh"]), syn=False)
-        device.emit(uinput.ABS_Y, int(st["lv"]), syn=False)
-        device.emit(uinput.ABS_THROTTLE, int(st["rh"]), syn=False)
-        device.emit(uinput.ABS_RUDDER, int(st["rv"]))
+        gamepad.right_joystick(x_value=st["rh"], y_value=st["rv"])
+        gamepad.left_joystick(x_value=st["lh"], y_value=st["lv"])
+        gamepad.update()
 
 thread = Thread(target = threaded_function, args = ())
 thread.start()
-#thread.join()
+# thread.join()
 
 try:
     # enable simulator mode for RC (without this stick positions are sent very slow by RC)
@@ -197,17 +185,17 @@ try:
 
             st["lv"] = parseInput(data[19:21], 'rv')
             st["lh"] = parseInput(data[22:24], 'rh')
-
+            
             camera = parseInput(data[25:27], 'cam')
-
-#            print(st)
+        
+        print(st)
             #with uinput.Device(events) as device:
 #            time.sleep(0.1)
         #else:
             # print(len(data))
 
             # Log to console.
-            #print('L: H{0:06d},V{1:06d}; R: H{2:06d},V{3:06d}, CAM: {4:06d}\n'.format(left_horizontal, left_vertical, right_horizontal, right_vertical, camera), end='')
+            # print('L: H{0:06d},V{1:06d}; R: H{2:06d},V{3:06d}, CAM: {4:06d}\n'.format(left_horizontal, left_vertical, right_horizontal, right_vertical, camera), end='')
 except serial.SerialException as e:
     # Stylistic: Newline to stop data update and spacing.
     print('\n\nCould not read/write:', e)
